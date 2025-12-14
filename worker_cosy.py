@@ -88,5 +88,5 @@ def health_check():
     return {"status": "CosyVoice Worker is Running"}
 
 if __name__ == "__main__":
-    print("正在启动服务，端口: 8001")
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    print("正在启动服务，端口: 8005")
+    uvicorn.run(app, host="0.0.0.0", port=8005)
