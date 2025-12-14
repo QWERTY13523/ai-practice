@@ -1,0 +1,40 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments (虚拟环境)
+venv/
+env/
+.env
+
+# PyCharm settings (IDE 配置文件，通常不建议上传个人配置)
+.idea/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+outputs/
+asset/
+checkpoints/
+CosyVoice/asset/
+CosyVoice/demo_videos/
+CosyVoice/pretrained_models/
+CosyVoice/outputs/
+CosyVoice/nohup.out
+
+index-tts/outputs/
+index-tts/checkpoints/
+index-tts/assets/
+model/
+uploads/
+code/

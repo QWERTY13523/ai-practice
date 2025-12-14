@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 有声书生成平台 (高级版)</title>
+    <style>
+        :root { --primary: #667eea; --success: #48bb78; --bg: #f5f7fa; }
+        body { font-family: 'Segoe UI', sans-serif; max-width: 900px; margin: 0 auto; padding: 40px; background-color: var(--bg); color: #333; }
+
+        .container { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+        h1 { text-align: center; margin-bottom: 10px; color: #2d3748; }
+        .subtitle { text-align: center; color: #718096; margin-bottom: 30px; font-size: 1.1em; }
+
+        /* 卡片容器 */
+        .step-box { border: 1px solid #e2e8f0; padding: 30px; border-radius: 10px; margin-bottom: 25px; transition: 0.3s; background: #fff; }
+        .step-box.active { border-color: var(--primary); box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15); transform: translateY(-2px); }
+        .step-title { font-size: 18px; font-weight: 700; margin-bottom: 20px; color: #2d3748; display: flex; align-items: center; }
+        .step-title::before { content: ''; display: inline-block; width: 6px; height: 24px; background: var(--primary); margin-right: 12px; border-radius: 3px; }
+
+        /* 按钮样式 */
+        button { background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: 600; transition: all 0.2s; }
+        button:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        button:disabled { background: #cbd5e0; cursor: not-allowed; transform: none; box-shadow: none; }
+        .btn-success { background: var(--success); }
+        .btn-restart { background: #718096; }
+
+        /* 表格样式 */
+        .role-table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 10px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+        .role-table th { background-color: #f7fafc; color: #4a5568; font-weight: 600; padding: 15px; text-align: left; border-bottom: 1px solid #e2e8f0; }
+        .role-table td { padding: 15px; border-bottom: 1px solid #e2e8f0; vertical-align: middle; }
+        .role-table tr:last-child td { border-bottom: none; }
+        .role-table tr:hover td { background-color: #f8fbff; }
+
+        /* 表单控件 */
+        .role-select { padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e0; width: 100%; font-size: 14px; outline: none; transition: border 0.2s; }
+        .role-select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
+        input[type="file"] { font-size: 13px; color: #718096; }
+
+        /* 进度条 */
+        #status-area { display: none; }
+        .progress-container { background: #edf2f7; height: 12px; border-radius: 6px; overflow: hidden; margin: 20px 0; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, #48bb78, #38a169); width: 0%; transition: width 0.4s ease-in-out; }
+        .status-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; background: #ebf8ff; color: #3182ce; margin-bottom: 10px; }
+
+        /* 结果区域 */
+        #result-area { display: none; text-align: center; background: #f0fff4; border: 1px solid #c6f6d5; }
+        audio { width: 100%; margin-top: 20px; outline: none; border-radius: 30px; }
+
+        /* 工具类 */
+        .hidden { display: none !important; }
+        .highlight-role { color: var(--primary); font-weight: bold; background: #ebf8ff; padding: 2px 6px; border-radius: 4px; }
+        /* 旁白行高亮 */
+        .tr-narrator { background-color: #fffaf0; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>📚 AI 智能有声书生成</h1>
+    <p class="subtitle">上传文本 -> 智能提取角色 -> 定制专属音色 -> 生成大片</p>
+
+    <div class="step-box active" id="step1">
+        <div class="step-title">第一步：上传小说文本</div>
+        <p style="font-size: 14px; color: #718096; margin-bottom: 20px;">系统将自动使用 Qwen 大模型分析剧本中的角色与情绪。</p>
+        <div style="display: flex; gap: 15px; align-items: center;">
+            <div style="flex: 1; position: relative;">
+                <input type="file" id="fileInput" accept=".txt" style="width: 100%; padding: 12px; border: 2px dashed #cbd5e0; border-radius: 8px; background: #f7fafc; cursor: pointer;">
+            </div>
+            <button onclick="uploadAndAnalyze()" id="analyzeBtn">🚀 分析剧本</button>
+        </div>
+    </div>
+
+    <div class="step-box hidden" id="step2">
+        <div class="step-title">第二步：配置角色音色</div>
+        <p style="font-size: 14px; color: #718096; margin-bottom: 15px;">
+            系统已检测到以下角色。请为他们指定预置音色，或上传 3-10 秒的干声进行克隆。
+            <br>
+            <span style="color: var(--primary); font-size: 12px;">* 提示：列表第一位通常为旁白，建议选择稳重的音色。</span>
+        </p>
+
+        <table class="role-table">
+            <thead>
+                <tr>
+                    <th width="20%">角色名</th>
+                    <th width="40%">选择预置音色</th>
+                    <th width="40%">或：上传克隆音频 (wav/mp3)</th>
+                </tr>
+            </thead>
+            <tbody id="role-config-body">
+                </tbody>
+        </table>
+
+        <div style="text-align: right; margin-top: 25px;">
+            <button onclick="startGeneration()" id="generateBtn" class="btn-success">✨ 开始合成有声书</button>
+        </div>
+    </div>
+
+    <div class="step-box hidden" id="status-area">
+        <div class="step-title">第三步：AI 正在演绎中</div>
+        <div style="text-align: center;">
+            <span class="status-badge" id="status-badge">初始化中...</span>
+            <div class="progress-container">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+            <p id="detail-msg" style="color: #718096; font-size: 14px; font-family: monospace;">正在调度 GPU 资源...</p>
+        </div>
+    </div>
+
+    <div class="step-box hidden" id="result-area">
+        <h2>🎉 生成完毕！</h2>
+        <p style="color: #48bb78; font-size: 14px;">您的有声书已制作完成，请试听或下载。</p>
+
+        <audio id="audio-player" controls></audio>
+
+        <div style="margin-top: 30px; display: flex; justify-content: center; gap: 20px;">
+            <a id="download-link" href="#" download="audiobook.mp3">
+                <button class="btn-success">⬇️ 下载 MP3文件</button>
+            </a>
+            <button onclick="location.reload()" class="btn-restart">🔄 制作下一本</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const API_BASE = "http://localhost:8000";
+
+    // === 🌟 配置预置音色列表 🌟 ===
+    // 确保这些文件真实存在于服务器的 input_audio 目录中
+    const PRESET_VOICES = [
+        { name: "孙悟空 (预设)", value: "孙悟空.wav" },
+        { name: "金角大王 (预设)", value: "金角大王.wav" },
+        { name: "银角大王 (预设)", value: "银角大王.wav" },
+        { name: "唐僧 (预设)", value: "唐僧.wav" },
+        { name: "男声 - 沉稳", value: "male_01.wav" },
+        { name: "男声 - 激昂", value: "male_02.wav" },
+        { name: "女声 - 温柔", value: "female_01.wav" },
+        { name: "女声 - 可爱", value: "female_02.wav" }
+    ];
+
+    let currentTaskId = null;
+    let timer = null;
+    let analyzedRoles = [];
+
+    // === 1. 上传并分析 (关键修改：强制加入旁白) ===
+    async function uploadAndAnalyze() {
+        const fileInput = document.getElementById('fileInput');
+        if (fileInput.files.length === 0) { alert("请先选择 txt 文件！"); return; }
+
+        const btn = document.getElementById('analyzeBtn');
+        btn.disabled = true;
+        btn.innerHTML = "🧠 分析中...";
+
+        const formData = new FormData();
+        formData.append("file", fileInput.files[0]);
+
+        try {
+            const response = await fetch(`${API_BASE}/analyze`, { method: 'POST', body: formData });
+            if (!response.ok) throw new Error("Server Error");
+
+            const data = await response.json();
+
+            // 🌟 核心逻辑：处理角色列表 🌟
+            // 后端往往会过滤掉旁白，所以我们需要在这里手动把它加回来
+            let roles = data.roles || [];
+
+            // 移除已有的“旁白”（如果有的话），以防重复，准备重排到第一位
+            roles = roles.filter(r => r !== "旁白");
+
+            // 强制将“旁白”插入到数组第一个位置
+            roles.unshift("旁白");
+
+            analyzedRoles = roles;
+
+            if (analyzedRoles.length > 0) {
+                renderRoleConfig(analyzedRoles);
+
+                // 切换界面
+                document.getElementById('step1').classList.remove('active');
+                document.getElementById('step2').classList.remove('hidden');
+                setTimeout(() => document.getElementById('step2').classList.add('active'), 50);
+            } else {
+                alert("未分析出角色，请检查文本内容或格式。");
+                btn.disabled = false;
+                btn.innerHTML = "🚀 分析剧本";
+            }
+        } catch (e) {
+            console.error(e);
+            alert("连接服务器失败，请确保后台已启动 (python app.py)");
+            btn.disabled = false;
+            btn.innerHTML = "🚀 分析剧本";
+        }
+    }
+
+    // === 2. 渲染角色表单 ===
+    function renderRoleConfig(roles) {
+        const tbody = document.getElementById('role-config-body');
+        tbody.innerHTML = "";
+
+        roles.forEach(role => {
+            const tr = document.createElement('tr');
+
+            const isNarrator = role === "旁白";
+            if (isNarrator) {
+                tr.classList.add('tr-narrator'); // 给旁白行加个底色
+            }
+
+            // 角色名显示
+            const roleDisplay = isNarrator ? `<span class="highlight-role">📜 旁白 (Narrator)</span>` : role;
+
+            // 下拉框默认文本
+            let defaultText = isNarrator ? "-- 推荐：请选择一个稳重音色 --" : "-- 自动：AI 随机分配 --";
+
+            // 生成下拉框选项
+            let optionsHtml = `<option value="">${defaultText}</option>`;
+            PRESET_VOICES.forEach(v => {
+                // 简单的自动匹配逻辑
+                const selected = v.name.includes(role) ? "selected" : "";
+                optionsHtml += `<option value="${v.value}" ${selected}>${v.name}</option>`;
+            });
+
+            tr.innerHTML = `
+                <td>${roleDisplay}</td>
+                <td>
+                    <select class="role-select" name="voice_select_${role}">
+                        ${optionsHtml}
+                    </select>
+                </td>
+                <td>
+                    <input type="file" name="voice_file_${role}" accept=".wav,.mp3">
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    // === 3. 开始生成 ===
+    async function startGeneration() {
+        const btn = document.getElementById('generateBtn');
+        btn.disabled = true;
+        btn.innerHTML = "⏳ 正在提交任务...";
+
+        const formData = new FormData();
+        const fileInput = document.getElementById('fileInput');
+        formData.append("file", fileInput.files[0]);
+
+        // 收集配置
+        analyzedRoles.forEach(role => {
+            const fileInput = document.querySelector(`input[name="voice_file_${role}"]`);
+            const selectInput = document.querySelector(`select[name="voice_select_${role}"]`);
+
+            // 1. 优先使用上传的文件
+            if (fileInput && fileInput.files.length > 0) {
+                formData.append(`custom_voice_${role}`, fileInput.files[0]);
+            }
+            // 2. 其次使用预置选择
+            else if (selectInput && selectInput.value) {
+                formData.append(`preset_voice_${role}`, selectInput.value);
+            }
+            // 3. 都不选则由后端自动处理 (旁白会从资源池随机，其他角色也会随机)
+        });
+
+        try {
+            const response = await fetch(`${API_BASE}/generate_step`, { method: 'POST', body: formData });
+            const data = await response.json();
+
+            currentTaskId = data.task_id;
+
+            // 切换界面
+            document.getElementById('step2').classList.remove('active');
+            document.getElementById('step2').classList.add('hidden');
+
+            const statusArea = document.getElementById('status-area');
+            statusArea.style.display = 'block';
+            statusArea.classList.remove('hidden');
+            setTimeout(() => statusArea.classList.add('active'), 50);
+
+            // 启动轮询
+            timer = setInterval(checkStatus, 1000);
+
+        } catch (e) {
+            console.error(e);
+            alert("提交失败，请检查网络或后台日志");
+            btn.disabled = false;
+            btn.innerHTML = "✨ 开始合成有声书";
+        }
+    }
+
+    // === 4. 轮询进度 ===
+    async function checkStatus() {
+        if (!currentTaskId) return;
+        try {
+            const response = await fetch(`${API_BASE}/status/${currentTaskId}`);
+            const data = await response.json();
+
+            // 更新 UI
+            const percent = data.progress || 0;
+            document.getElementById('progress-fill').style.width = percent + "%";
+
+            const msg = data.message || "处理中...";
+            document.getElementById('detail-msg').innerText = msg;
+
+            // 状态徽章
+            const badge = document.getElementById('status-badge');
+            if (data.status === 'analyzing') badge.innerText = "🔍 正在分析";
+            else if (data.status === 'generating') badge.innerText = "🎙️ 正在配音";
+            else if (data.status === 'completed') badge.innerText = "✅ 完成";
+
+            if (data.status === 'completed') {
+                clearInterval(timer);
+
+                // 显示结果
+                document.getElementById('status-area').classList.add('hidden');
+                const resultArea = document.getElementById('result-area');
+                resultArea.classList.remove('hidden');
+                resultArea.style.display = 'block';
+                setTimeout(() => resultArea.classList.add('active'), 50);
+
+                const audioUrl = `${API_BASE}${data.result_url}`;
+                document.getElementById('audio-player').src = audioUrl;
+                document.getElementById('download-link').href = audioUrl;
+
+            } else if (data.status === 'failed') {
+                clearInterval(timer);
+                alert("生成出错：" + data.message);
+                document.getElementById('status-badge').innerText = "❌ 失败";
+                document.getElementById('status-badge').style.color = "red";
+            }
+        } catch (e) {
+            console.error("轮询出错", e);
+        }
+    }
+</script>
+
+</body>
+</html>
