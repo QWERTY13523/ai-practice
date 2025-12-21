@@ -30,6 +30,7 @@ CosyVoice/asset/
 CosyVoice/demo_videos/
 CosyVoice/pretrained_models/
 CosyVoice/outputs/
+AudioLibrary/
 CosyVoice/nohup.out
 
 index-tts/outputs/

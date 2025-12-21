@@ -23,14 +23,14 @@ UPLOAD_DIR = "uploads"
 OUTPUT_DIR = "outputs"
 TEMP_VOICE_DIR = "uploads/custom_voices"
 VOICE_POOL_DIR = "/home/nyw/AI-practice/resource/input_audio"
-BGM_DIR = "/home/nyw/AI-practice/resource/pre_train_wav/background"  # BGM 库
+BGM_DIR = "/home/nyw/AI-practice/resource/pre_train_wav/background" 
 
 # 确保目录存在
 for d in [UPLOAD_DIR, OUTPUT_DIR, TEMP_VOICE_DIR, VOICE_POOL_DIR, BGM_DIR]:
     os.makedirs(d, exist_ok=True)
 
 # GPU 服务地址
-URL_COSY = "http://localhost:8005/generate" # 注意你之前的配置端口
+URL_COSY = "http://localhost:8005/generate" # 确保这里端口是你CosyVoice服务的端口
 URL_INDEX = "http://localhost:8002/generate"
 
 TASKS = {}
@@ -59,7 +59,7 @@ def mix_speech_with_bgm(speech_seg, bgm_path):
     5. 混合
     """
     if not bgm_path or not os.path.exists(bgm_path):
-        return speech_seg # 没有BGM则原样返回
+        return speech_seg 
     
     try:
         bgm = AudioSegment.from_file(bgm_path)
@@ -67,25 +67,22 @@ def mix_speech_with_bgm(speech_seg, bgm_path):
         # 1. 统一基准音量
         bgm = match_target_amplitude(bgm, -20.0)
         
-        # 2. 压低背景音 (比人声低 12dB，保证人声清晰)
+        # 2. 压低背景音 (比人声低 12dB)
         bgm = bgm - 12 
         
-        # 3. 循环填充：如果 BGM 短于人声，进行循环
-        # 额外加 500ms 尾韵，防止截断太生硬
+        # 3. 循环填充
         target_len = len(speech_seg) + 500
         if len(bgm) < target_len:
             loop_count = (target_len // len(bgm)) + 1
             bgm = bgm * loop_count
             
-        # 4. 精确裁剪
+        # 4. 裁剪
         bgm = bgm[:target_len]
         
-        # 5. 淡入淡出 (防止不同BGM切换时的爆音)
-        # 开头淡入 500ms，结尾淡出 500ms
+        # 5. 淡入淡出
         bgm = bgm.fade_in(500).fade_out(500)
         
-        # 6. 叠加：BGM 可能会比人声长一点点（尾韵），overlay 会自动扩展长度
-        # position=0 表示从头开始叠
+        # 6. 叠加
         mixed = speech_seg.overlay(bgm, position=0)
         return mixed
 
@@ -93,7 +90,7 @@ def mix_speech_with_bgm(speech_seg, bgm_path):
         print(f"⚠️ BGM融合失败 [{os.path.basename(bgm_path)}]: {e}")
         return speech_seg
 
-# ================= 4. LLM 分析逻辑 (升级版) =================
+# ================= 4. LLM 分析逻辑 =================
 
 def get_all_bgm_filenames():
     """获取 BGM 目录下所有文件名"""
@@ -115,9 +112,8 @@ def parse_json_output(text_output):
             role = item.get("role", item.get("角色", "旁白")).strip()
             emotion = item.get("emotion", item.get("情绪", "平淡"))
             text = item.get("text", item.get("台词", ""))
-            bgm = item.get("bgm", "") # 获取 BGM 字段
+            bgm = item.get("bgm", "") 
             
-            # 强制统一旁白
             if "旁" in role and "白" in role: role = "旁白"
             if role.lower() == "narrator": role = "旁白"
             
@@ -125,22 +121,41 @@ def parse_json_output(text_output):
         return results
     except json.JSONDecodeError as e:
         print(f"❌ JSON 解析失败: {e}")
+        return []
 
 def analyze_novel_roles_llm(text_content):
-    # 1. 获取所有可用的 BGM 文件名
     bgm_files = get_all_bgm_filenames()
     bgm_list_str = json.dumps(bgm_files, ensure_ascii=False)
     
-    # 2. 构建 Prompt
+    # 修复了这里的字符串拼接和换行问题
     system_prompt = (
-        "你是一个有声书导演。请将文本拆解为 JSON 数组。\n"
+        "你是一个有声书脚本制作专家。请将输入的小说文本拆解为 JSON 数组。\n"
         f"可用的背景音乐/音效库如下：{bgm_list_str}\n\n"
-        "要求：\n"
-        "1. 字段包括：role (角色), emotion (情绪), text (台词), bgm (从上述列表中选一个最匹配的文件名，如果没有合适的或不需要，填空字符串)。\n"
-        "2. 角色名必须统一。\n"
-        "3. 所有旁白的角色名全部统一为“旁白”。\n"
-        "4. 严格输出 JSON 格式。\n"
-        "5. 【重要】为了保证配音稳定，emotion (情绪) 字段必须保持克制。即使原文描写非常激烈（如歇斯底里、咆哮、大哭），也请转化为相对收敛的描述，例如 '压抑的愤怒'、'冷峻'、'急促'、'低沉'、'哽咽' 等。绝对避免使用会导致声音失真的极端情绪词。"
+        "【核心任务】：\n"
+        "将小说原文拆解为适合多人有声剧朗读的脚本。**原文的每一个字、标点都必须保留，不能有任何遗漏！**\n\n"
+        "【拆解规则】：\n"
+        "1. **对话内容**（引号内）：分配给对应的角色。\n"
+        "2. **非对话内容**（引号外）：**全部**分配给角色“旁白”。包括动作、神态、以及“他说”、“道”等引导语。\n"
+        "3. **必须拆分**：当一行文字是 [描写 + 对话] 时，必须拆分为 [旁白] + [角色] 两条，不能合并！\n"
+        "4. **情绪控制**：情绪 emotion 必须克制（如用'急促'代替'咆哮'，用'低沉'代替'怒吼'）。\n\n"
+        "5. 【旁白特殊规则】：旁白是‘说书人’，必须抽离于剧情之外。无论剧情多么激烈（打斗、争吵），旁白的情绪只能是 '沉稳'、'讲述感'、'舒缓' 或 '带有悬念'。严禁给旁白分配 '愤怒'、'哭泣'、'大笑' 等具体的人物情绪！\n\n"
+        "【拆分示例（严格模仿此逻辑）】：\n"
+        "输入原文：\n"
+        "猪八戒一见，把嘴一噘，嘟囔道：“师父，糟糕了！”\n"
+        "输出 JSON：\n"
+        "[\n"
+        "  {\"role\": \"旁白\", \"emotion\": \"沉稳\", \"text\": \"猪八戒一见，把嘴一噘，嘟囔道：\", \"bgm\": \"\"},\n"
+        "  {\"role\": \"猪八戒\", \"emotion\": \"委屈\", \"text\": \"师父，糟糕了！\", \"bgm\": \"funny.mp3\"}\n"
+        "]\n\n"
+        "输入原文：\n"
+        "“快走！”孙悟空一把推开他，“别磨蹭！”\n"
+        "输出 JSON：\n"
+        "[\n"
+        "  {\"role\": \"孙悟空\", \"emotion\": \"急促\", \"text\": \"快走！\", \"bgm\": \"battle.mp3\"},\n"
+        "  {\"role\": \"旁白\", \"emotion\": \"讲述感\", \"text\": \"孙悟空一把推开他，\", \"bgm\": \"battle.mp3\"},\n"
+        "  {\"role\": \"孙悟空\", \"emotion\": \"急促\", \"text\": \"别磨蹭！\", \"bgm\": \"battle.mp3\"}\n"
+        "]\n\n"
+        "现在，请处理下面的文本："
     )
 
     try:
@@ -150,14 +165,14 @@ def analyze_novel_roles_llm(text_content):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": text_content}
             ],
-            temperature=0.1 
+            temperature=0.01 
         )
         return parse_json_output(completion.choices[0].message.content)
     except Exception as e:
         print(f"❌ LLM 错误: {e}")
         return []
 
-# ================= 5. 核心流水线 (单句融合版) =================
+# ================= 5. 核心流水线 =================
 
 class VoiceManager:
     def __init__(self, pool_dir):
@@ -188,12 +203,11 @@ class VoiceManager:
         selected = self._ask_llm_to_pick(role_name, emotion)
         self.selection_cache[role_name] = selected
         return selected
-# ================= 5. 核心流水线 (带音色日志版) =================
+
 
 def process_pipeline_v2(task_id: str, text: str, user_voice_map: dict):
     TASKS[task_id]["status"] = "analyzing"
     
-    # --- 1. 角色与BGM分析 ---
     print("\n🔍 [1/4] 正在分析文本并分配BGM...")
     dialogues = analyze_novel_roles_llm(text)
     if not dialogues:
@@ -206,18 +220,41 @@ def process_pipeline_v2(task_id: str, text: str, user_voice_map: dict):
     
     final_segments = []
 
-    # --- 2. 逐句生成 + 实时融合 ---
     print("\n🗣️ [2/4] 开始生成语音并融合背景音...")
     for i, item in enumerate(dialogues):
         TASKS[task_id]["progress"] = int((i / len(dialogues)) * 100)
         role = item["角色"]
         line = item["台词"]
-        emotion = item.get("情绪", "")
+        raw_emotion = item.get("情绪", "")  
         bgm_filename = item.get("bgm", "")
-        
-        # 打印当前句子的基本信息
+
+        # 定义情绪降级映射
+        safe_emotion_map = {
+            "愤怒": "压抑的怒火，语气冰冷", 
+            "咆哮": "咬牙切齿，低沉",
+            "大喊": "急促，重音",
+            "歇斯底里": "颤抖，哽咽",
+            "大笑": "轻笑",
+            "狂笑": "得意的笑",
+            "悲痛欲绝": "悲伤，低落",
+            "恐惧": "紧张，颤音",
+            "激昂": "坚定，有力"
+        }
+
+        # 处理情绪
+        if role == "旁白":
+            final_emotion = "沉稳，讲述感，悬疑"
+        else:
+            final_emotion = raw_emotion
+            for danger_key, safe_value in safe_emotion_map.items():
+                if danger_key in raw_emotion:
+                    print(f"   🛡️ [音色保护] 将 '{raw_emotion}' 降级为 -> '{safe_value}'")
+                    final_emotion = safe_value
+                    break 
+
+        # 打印日志
         bgm_info = f"🎵 {bgm_filename}" if bgm_filename else "无BGM"
-        print(f"\n➡️ [{i+1}/{len(dialogues)}] {role}: {line[:15]}... | {bgm_info}")
+        print(f"\n [{i+1}/{len(dialogues)}] {role}: {line[:15]}... (情绪: {final_emotion}) | {bgm_info}")
 
         try:
             # === A. 确定音色逻辑 ===
@@ -245,10 +282,10 @@ def process_pipeline_v2(task_id: str, text: str, user_voice_map: dict):
 
             # 4. AI 自动选角
             if not final_wav_path and not use_cosy_default: 
-                final_wav_path = vm.get_smart_voice(role, emotion)
+                # 这里必须传入 final_emotion 让 AI 选角时也知道情绪变了（可选）
+                final_wav_path = vm.get_smart_voice(role, final_emotion)
                 voice_source_type = "AI自动"
 
-            # === B. 打印音色选择日志 (这是你想要的功能) ===
             if use_cosy_default:
                 print(f"   🎙️ [音色] {voice_source_type} -> CosyVoice (中文女)")
             elif final_wav_path:
@@ -261,10 +298,16 @@ def process_pipeline_v2(task_id: str, text: str, user_voice_map: dict):
             audio_data = None
             
             if use_cosy_default:
+                # CosyVoice 通常不需要情绪参数，或者只接受特定参数
                 resp = requests.post(URL_COSY, json={"text": line, "speaker": "中文女"}, timeout=60)
             else:
                 if final_wav_path and os.path.exists(final_wav_path):
-                    resp = requests.post(URL_INDEX, json={"text": line, "emotion": emotion, "ref_audio_path": final_wav_path}, timeout=60)
+                    # 【重要修改】这里必须使用处理后的 final_emotion，否则音色保护逻辑不生效！
+                    resp = requests.post(URL_INDEX, json={
+                        "text": line, 
+                        "emotion": final_emotion,  # <--- 修改这里：使用 final_emotion
+                        "ref_audio_path": final_wav_path
+                    }, timeout=60)
                 else:
                     print(f"   ⚠️ 参考音频文件丢失: {final_wav_path}")
                     continue
@@ -311,6 +354,7 @@ def process_pipeline_v2(task_id: str, text: str, user_voice_map: dict):
     TASKS[task_id]["progress"] = 100
     print(f"\n🎉 [4/4] 任务完成，文件: {final_name}\n")
 
+
 # ================= 6. API 接口 =================
 
 @app.post("/analyze")
@@ -339,12 +383,14 @@ async def generate_step(request: Request, bg_tasks: BackgroundTasks):
             save_path = os.path.join(TEMP_VOICE_DIR, safe_name)
             with open(save_path, "wb") as f: shutil.copyfileobj(v.file, f)
             user_voice_map[role] = os.path.abspath(save_path)
+            print(f"   📂 收到文件: [{role}] -> {v.filename}")
             
         elif k.startswith("preset_voice_") and isinstance(v, str) and v:
             role = k.replace("preset_voice_", "")
             path = os.path.join(VOICE_POOL_DIR, v)
             if os.path.exists(path):
                 user_voice_map[role] = os.path.abspath(path)
+                print(f"   🎵 收到预设: [{role}] -> {v}")
 
     task_id = str(uuid.uuid4())
     TASKS[task_id] = {"status": "pending", "progress": 0}

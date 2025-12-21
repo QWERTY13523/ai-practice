@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 有声书生成平台 (高级版)</title>
+    <title>“声临其境”——AI有声书配音</title>
     <style>
         :root { --primary: #667eea; --success: #48bb78; --bg: #f5f7fa; }
         body { font-family: 'Segoe UI', sans-serif; max-width: 900px; margin: 0 auto; padding: 40px; background-color: var(--bg); color: #333; }
@@ -56,7 +56,7 @@
 
 <div class="container">
     <h1>📚 AI 智能有声书生成</h1>
-    <p class="subtitle">上传文本 -> 智能提取角色 -> 定制专属音色 -> 生成大片</p>
+    <p class="subtitle">上传文本 -> 智能提取角色 -> 定制专属音色 -> 生成沉浸式有声小说音频！</p>
 
     <!-- 第一步：上传与分析 -->
     <div class="step-box active" id="step1">
@@ -74,7 +74,7 @@
     <div class="step-box hidden" id="step2">
         <div class="step-title">第二步：配置角色音色</div>
         <p style="font-size: 14px; color: #718096; margin-bottom: 15px;">
-            系统已检测到以下角色。您可以为他们指定预置音色，或上传 3-10 秒的干声进行克隆。
+            系统已检测到以下角色。您可以为他们指定预置音色，或上传 3-10 秒的期待音色的音频用来克隆。
             <br>
             <span style="color: var(--primary); font-size: 12px;">* 提示：旁白如果不选，将默认使用稳健的预训练音色（CosyVoice）。</span>
         </p>
@@ -126,19 +126,19 @@
 </div>
 
 <script>
-    const API_BASE = "http://localhost:8000"; 
+    const API_BASE = "http://localhost:8039"; 
     
-    // === 🌟 配置预置音色列表 🌟 ===
-    // 这里的 value 必须对应后端 resource/input_audio 文件夹里的真实文件名
+    // value 对应你 resource/input_audio 文件夹里的真实文件名（注意 mp3 和 wav）
     const PRESET_VOICES = [
-        { name: "孙悟空 (预设)", value: "孙悟空.wav" },
-        { name: "金角大王 (预设)", value: "金角大王.wav" },
-        { name: "银角大王 (预设)", value: "银角大王.wav" },
-        { name: "唐僧 (预设)", value: "唐僧.wav" },
-        { name: "男声 - 沉稳", value: "male_01.wav" },
-        { name: "男声 - 激昂", value: "male_02.wav" },
-        { name: "女声 - 温柔", value: "female_01.wav" },
-        { name: "女声 - 可爱", value: "female_02.wav" }
+        { name: "孙悟空 (西游记)", value: "孙悟空.mp3" },   
+        { name: "唐僧 (西游记)", value: "唐僧.wav" },       
+        { name: "金角大王 (西游记)", value: "金角大王.mp3" }, 
+        { name: "银角大王 (西游记)", value: "银角大王.mp3" }, 
+        { name: "老妇人 (角色)", value: "老妇人.wav" },
+        { name: "祥子 (骆驼祥子)", value: "祥子.wav" },
+        { name: "虎妞 (骆驼祥子)", value: "虎妞.wav" },
+        { name: "小福子 (骆驼祥子)", value: "小福子.wav" },
+        { name: "旁白 (预置文件)", value: "旁白.wav" }
     ];
 
     let currentTaskId = null;
@@ -184,15 +184,12 @@
         }
     }
 
-    // === 2. 渲染角色表单 (关键修改) ===
+    // === 2. 渲染角色表单 ===
     function renderRoleConfig(roles) {
         const tbody = document.getElementById('role-config-body');
         tbody.innerHTML = "";
 
         roles.forEach(role => {
-            // ❌ 删除了之前的 if (role === "旁白") return; 逻辑
-            // 现在旁白也会正常渲染出来
-
             const tr = document.createElement('tr');
             
             // 旁白特殊样式
@@ -200,7 +197,7 @@
             const roleDisplay = isNarrator ? `<span class="highlight-role">旁白 (Narrator)</span>` : role;
             
             // 下拉框默认选项：旁白显示“默认 CosyVoice”，其他人显示“自动分配”
-            let defaultText = isNarrator ? "-- 默认: CosyVoice (稳健) --" : "-- 自动: 系统随机分配 --";
+            let defaultText = isNarrator ? "默认: CosyVoice (稳健)" : "系统自动分配，可手动修改";
 
             // 生成下拉框选项
             let optionsHtml = `<option value="">${defaultText}</option>`;
@@ -225,7 +222,7 @@
         });
     }
 
-    // === 3. 开始生成 (关键修改) ===
+    // === 3. 开始生成 ===
     async function startGeneration() {
         const btn = document.getElementById('generateBtn');
         btn.disabled = true;
@@ -248,7 +245,6 @@
             else if (selectInput && selectInput.value) {
                 formData.append(`preset_voice_${role}`, selectInput.value);
             }
-            // 如果都不选，后端会根据角色是否为旁白进行默认处理
         });
 
         try {
@@ -262,7 +258,7 @@
             document.getElementById('step2').classList.add('hidden');
             
             const statusArea = document.getElementById('status-area');
-            statusArea.style.display = 'block'; // 强制显示
+            statusArea.style.display = 'block'; 
             statusArea.classList.remove('hidden');
             setTimeout(() => statusArea.classList.add('active'), 50);
 
@@ -289,7 +285,7 @@
             document.getElementById('progress-fill').style.width = percent + "%";
             
             const msg = data.message || "处理中...";
-            document.getElementById('detail-msg').innerText = msg;
+            document.getElementById('detail-msg').innerText = msg; // 显示后端传来的 BGM 信息等
             
             // 状态徽章
             const badge = document.getElementById('status-badge');

@@ -1,13 +1,10 @@
 import os
 import sys
 
-# ================= 核心配置 (必须放在最开头) =================
-# 1. 禁用 DeepSpeed 集成 (防止 Triton/CUDA 报错)
-os.environ["HfDeepSpeedConfig"] = "5"
+#os.environ["HfDeepSpeedConfig"] = "5"
 
-# 2. 强制使用 GPU 0
 os.environ["CUDA_VISIBLE_DEVICES"] = "5"
-# ========================================================
+
 
 import torch
 import torchaudio
@@ -16,8 +13,7 @@ import uvicorn
 from fastapi import FastAPI, Response, HTTPException
 from pydantic import BaseModel
 
-# === 路径配置 ===
-# 请确认这个路径是你 CosyVoice 项目的真实路径
+
 COSY_ROOT = "/home/nyw/AI-practice/CosyVoice"
 sys.path.append(COSY_ROOT)
 sys.path.append(os.path.join(COSY_ROOT, "third_party", "Matcha-TTS"))
@@ -31,7 +27,7 @@ except ImportError:
     print("❌ 导入失败: 请检查 COSY_ROOT 路径是否正确。")
     sys.exit(1)
 
-# === 初始化服务 ===
+
 app = FastAPI()
 
 print(f"🚀 [GPU 0] 正在加载 CosyVoice 模型: {MODEL_DIR} ...")
@@ -41,7 +37,7 @@ if not os.path.exists(MODEL_DIR):
     print("请先从 ModelScope 下载 CosyVoice-300M-SFT 模型。")
     sys.exit(1)
 
-# 加载模型 (SFT模式)
+
 try:
     model = CosyVoice(MODEL_DIR)
     print("✅ CosyVoice 模型加载成功！")
@@ -49,10 +45,10 @@ except Exception as e:
     print(f"❌ 模型加载失败: {e}")
     sys.exit(1)
 
-# === 定义请求格式 (对应 main_server.py 发送的 JSON) ===
+
 class NarratorRequest(BaseModel):
     text: str
-    speaker: str = "中文女"  # 默认音色
+    speaker: str = "中文女"  
 
 @app.post("/generate")
 def generate(req: NarratorRequest):
