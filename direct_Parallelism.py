@@ -50,41 +50,19 @@ def match_target_amplitude(sound, target_dBFS=-20.0):
     return sound.apply_gain(change_in_dBFS)
 
 def mix_speech_with_bgm(speech_seg, bgm_path):
-    """
-    单句混合逻辑 (修改版)：
-    1. 不循环：BGM 只播放一遍。
-    2. 如果 BGM 长于人声：裁剪并淡出。
-    3. 如果 BGM 短于人声：自然播放结束。
-    """
     if not bgm_path or not os.path.exists(bgm_path):
         return speech_seg 
-    
     try:
         bgm = AudioSegment.from_file(bgm_path)
-        
-        # 1. 统一基准音量 & 压低背景音
         bgm = match_target_amplitude(bgm, -20.0)
         bgm = bgm - 12 
-        
-        # 2. 计算目标长度 (人声 + 500ms 尾韵)
         target_len = len(speech_seg) + 500
-        
-        # 3. 【核心修改】只播一遍逻辑
         if len(bgm) > target_len:
-            # Case A: BGM 比人声长 -> 裁剪到人声长度，并做淡出
             bgm = bgm[:target_len]
             bgm = bgm.fade_out(500)
-        else:
-            # Case B: BGM 比人声短 -> 不循环，不强行淡出(保留自然尾音)，直接用
-            pass
-            
-        # 统一加开头淡入，防止突兀
         bgm = bgm.fade_in(500)
-        
-        # 4. 叠加 (如果 BGM 短，overlay 会自动处理，不会报错)
         mixed = speech_seg.overlay(bgm, position=0)
         return mixed
-
     except Exception as e:
         print(f"⚠️ BGM融合失败 [{os.path.basename(bgm_path)}]: {e}")
         return speech_seg
@@ -122,35 +100,39 @@ def parse_json_output(text_output):
 def analyze_novel_roles_llm(text_content):
     bgm_files = get_all_bgm_filenames()
     bgm_list_str = json.dumps(bgm_files, ensure_ascii=False)
+    
     system_prompt = (
-        "你是一个有声书脚本制作专家。请将输入的小说文本拆解为 JSON 数组。\n"
-        f"可用的背景音乐/音效库如下：{bgm_list_str}\n\n"
-        "【核心任务】：\n"
-        "将小说原文拆解为适合多人有声剧朗读的脚本。**原文的每一个字、标点都必须保留，不能有任何遗漏！**\n\n"
-        "【拆解规则】：\n"
-        "1. **对话内容**（引号内）：分配给对应的角色。\n"
-        "2. **非对话内容**（引号外）：**全部**分配给角色“旁白”。包括动作、神态、以及“他说”、“道”等引导语。\n"
-        "3. **必须拆分**：当一行文字是 [描写 + 对话] 时，必须拆分为 [旁白] + [角色] 两条，不能合并！\n"
-        "4. **情绪控制**：情绪 emotion 必须克制。尽量不要有愤怒之类比较激动的情绪\n\n"
-        "5. 【旁白特殊规则】：旁白是‘说书人’，必须抽离于剧情之外。无论剧情多么激烈，旁白的情绪只能是 '沉稳'、'讲述感'、'舒缓' 或 '带有悬念'。严禁给旁白分配 '愤怒'、'哭泣'、'大笑' 等具体的人物情绪！\n\n"
-        "【拆分示例（严格模仿此逻辑）】：\n"
-        "输入原文：\n"
-        "猪八戒一见，把嘴一噘，嘟囔道：“师父，糟糕了！”\n"
-        "输出 JSON：\n"
+        "你是一个专业的有声书脚本编辑。你的任务是将小说原文拆解为语音合成（TTS）所需的 JSON 格式。\n"
+        f"【BGM素材库】：{bgm_list_str}\n\n"
+        "【核心原则（必须死守）】\n"
+        "1. **原文还原**：严禁修改、删减、增加原文的任何一个字或标点符号！\n"
+        "2. **界限分明**：\n"
+        "   - 引号 `“...”` 内部的内容 -> 归属对应角色。\n"
+        "   - 引号外部的内容（包括‘道’、‘说’、动作、心理、环境） -> 全部归属角色 '旁白'。\n"
+        "3. **必须切分**：遇到 [对话] + [描写] + [对话] 的结构，必须拆分成 3 个独立的 JSON 对象，绝对不能合并！\n"
+        "4. **情绪降级**：emotion 字段必须使用书面语且克制，防止TTS爆音。\n"
+        "5. **旁白人设**：旁白永远是冷静的.\n"
+        "6. **BGM规则**：仅当文本明显体现出素材库中某个文件名的氛围时（如写了'雨'且库里有'rain'），才填入bgm字段，否则填空字符串 \"\"。\n\n"
+        "【拆解示例（请严格模仿）】\n"
+        "输入：\n"
+        "李四一拍桌子，怒道：“你敢！”说着便冲了上去。\n"
+        "输出：\n"
         "[\n"
-        "  {\"role\": \"旁白\", \"emotion\": \"沉稳\", \"text\": \"猪八戒一见，把嘴一噘，嘟囔道：\", \"bgm\": \"\"},\n"
-        "  {\"role\": \"猪八戒\", \"emotion\": \"委屈\", \"text\": \"师父，糟糕了！\", \"bgm\": \"funny.mp3\"}\n"
+        "  {\"role\": \"旁白\", \"emotion\": \"沉稳\", \"text\": \"李四一拍桌子，怒道：\", \"bgm\": \"\"},\n"
+        "  {\"role\": \"李四\", \"emotion\": \"愤怒、厌恶\", \"text\": \"“你敢！”\", \"bgm\": \"tension.mp3\"},\n"
+        "  {\"role\": \"旁白\", \"emotion\": \"急促\", \"text\": \"说着便冲了上去。\", \"bgm\": \"tension.mp3\"}\n"
         "]\n\n"
-        "输入原文：\n"
-        "“快走！”孙悟空一把推开他，“别磨蹭！”\n"
-        "输出 JSON：\n"
+        "输入：\n"
+        "“在家睡觉？”李峰冷笑了一声，猛地将一份文件摔在桌子上，吓得王强猛地一缩脖子。"
+        "输出：\n"
         "[\n"
-        "  {\"role\": \"孙悟空\", \"emotion\": \"急促\", \"text\": \"快走！\", \"bgm\": \"battle.mp3\"},\n"
-        "  {\"role\": \"旁白\", \"emotion\": \"讲述感\", \"text\": \"孙悟空一把推开他，\", \"bgm\": \"battle.mp3\"},\n"
-        "  {\"role\": \"孙悟空\", \"emotion\": \"急促\", \"text\": \"别磨蹭！\", \"bgm\": \"battle.mp3\"}\n"
+        "  {\"role\": \"李峰\", \"emotion\": \"厌恶\", \"text\": \"在家睡觉？\", \"bgm\": \"\"},\n"
+        "  {\"role\": \"旁白\", \"emotion\": \"自然、沉稳\", \"text\": \"李峰冷笑了一声，猛地将一份文件摔在桌子上，吓得王强猛地一缩脖子\", \"bgm\": \"\"},\n"
         "]\n\n"
-        "现在，请处理下面的文本："
+
+        "现在，请严格按照上述规则处理以下文本，直接输出 JSON 数组："
     )
+
     try:
         completion = client.chat.completions.create(
             model="qwen-max",
@@ -203,7 +185,7 @@ async def generate_segment_async(index, total, item, user_voice_map, vm, semapho
         raw_emotion = item.get("情绪", "")  
         bgm_filename = item.get("bgm", "")
 
-        # --- 情绪安全阀 ---
+        #--- 情绪安全阀 ---
         safe_emotion_map = {
             "愤怒": "语气冰冷", "咆哮": "咬牙切齿，低沉", "大喊": "急促",
             "歇斯底里": "颤抖，哽咽", "大笑": "轻笑", "狂笑": "得意的笑",
@@ -211,7 +193,7 @@ async def generate_segment_async(index, total, item, user_voice_map, vm, semapho
         }
         
         if role == "旁白":
-            final_emotion = "沉稳，讲述感，悬疑"
+            final_emotion = "讲述感，自然"
         else:
             final_emotion = raw_emotion
             for danger_key, safe_value in safe_emotion_map.items():
@@ -219,12 +201,11 @@ async def generate_segment_async(index, total, item, user_voice_map, vm, semapho
                     final_emotion = safe_value
                     break 
 
-        print(f"🔄 [{index+1}/{total}] 请求中... {role} ({final_emotion}): {line[:10]}...")
-
         # --- 选角逻辑 ---
         final_wav_path = None
         use_cosy_default = False
         
+        # 1. 查用户表
         if role in user_voice_map: 
             final_wav_path = user_voice_map[role]
         if not final_wav_path:
@@ -232,12 +213,31 @@ async def generate_segment_async(index, total, item, user_voice_map, vm, semapho
                 if u_role != "旁白" and role != "旁白" and (u_role in role or role in u_role):
                     final_wav_path = u_path; break
         
+        # 2. 旁白特殊处理
         if role == "旁白":
             if final_wav_path: use_cosy_default = False 
             else: use_cosy_default = True
         
+        # 3. AI 自动选角
         if not final_wav_path and not use_cosy_default: 
             final_wav_path = vm.get_smart_voice(role, final_emotion)
+
+        # === 📋 详细的控制台日志打印 (用户核心需求) ===
+        voice_log = "未知"
+        if use_cosy_default:
+            voice_log = "CosyVoice (默认女声)"
+        elif final_wav_path:
+            voice_log = f"{os.path.basename(final_wav_path)}"
+        else:
+            voice_log = "⚠️ 未找到可用音色"
+
+        bgm_log = bgm_filename if bgm_filename else "🈚"
+
+        print(f"\n➡️ [{index+1}/{total}] {role}: {line[:15]}...")
+        print(f"   🎙️ 音色: {voice_log}")
+        print(f"   🎭 情绪: {final_emotion}")
+        print(f"   🎵 BGM : {bgm_log}")
+        # ==========================================
 
         # --- 异步发送 API 请求 ---
         audio_data = None
@@ -258,18 +258,17 @@ async def generate_segment_async(index, total, item, user_voice_map, vm, semapho
 
                 if resp.status_code == 200:
                     audio_data = resp.content
-                    print(f"   ✅ [{index+1}] 生成完毕!")
+                    print(f"   ✅ 生成成功")
                 else:
-                    print(f"   ❌ [{index+1}] API错误: {resp.status_code}")
+                    print(f"   ❌ API错误: {resp.status_code}")
             except Exception as e:
-                print(f"   ❌ [{index+1}] 请求异常: {e}")
+                print(f"   ❌ 请求异常: {e}")
 
         return {
             "index": index,
             "audio_data": audio_data,
             "bgm_filename": bgm_filename 
         }
-
 # --- 主流水线 (异步包装) ---
 async def process_pipeline_async(task_id: str, text: str, user_voice_map: dict):
     TASKS[task_id]["status"] = "analyzing"
@@ -291,21 +290,31 @@ async def process_pipeline_async(task_id: str, text: str, user_voice_map: dict):
         tasks.append(generate_segment_async(i, len(dialogues), item, user_voice_map, vm, semaphore))
     
     results = await asyncio.gather(*tasks)
-    
     results = sorted(results, key=lambda x: x["index"] if x else -1)
 
-    print("\n🔨 [3/4] 正在合并音频并添加BGM...")
+    print("\n🔨 [3/4] 正在合并音频并添加BGM (已启用强力去噪)...")
     final_segments = []
     
+    last_role = None
+
     for res in results:
         if not res or not res["audio_data"]:
             continue
             
         try:
+            # 1. 基础处理
+            current_index = res["index"]
+            original_item = dialogues[current_index]
+            text_content = original_item["台词"].strip()
+            current_role = original_item["角色"]
+
             import io
             speech_seg = AudioSegment.from_file(io.BytesIO(res["audio_data"]), format="wav")
+            
+            # 2. 统一音量
             speech_seg = match_target_amplitude(speech_seg, -20.0)
             
+            # 3. 融合 BGM
             bgm_filename = res["bgm_filename"]
             bgm_path = os.path.join(BGM_DIR, bgm_filename) if bgm_filename else None
             
@@ -313,10 +322,36 @@ async def process_pipeline_async(task_id: str, text: str, user_voice_map: dict):
                 mixed_seg = mix_speech_with_bgm(speech_seg, bgm_path)
             else:
                 mixed_seg = speech_seg
-                
-            final_segments.append(mixed_seg)
-            final_segments.append(AudioSegment.silent(duration=300))
             
+            # ========================================================
+            # 🚨 关键修复：消除“啵”声的终极手段
+            # 在 BGM 融合后，对整体进行淡入淡出。
+            # 20ms 的淡入 + 30ms 的淡出，强制波形归零，消除接缝噪音。
+            # ========================================================
+            mixed_seg = mixed_seg.fade_in(20).fade_out(30)
+
+            # 4. 智能停顿计算
+            pause_duration = 300 
+            
+            if text_content.endswith(("，", ",", "、")):
+                pause_duration = 200 
+            elif text_content.endswith(("！", "!", "?", "？")):
+                pause_duration = 500 
+            elif text_content.endswith(("。", ".")):
+                pause_duration = 450 
+            elif text_content.endswith(("……", "…")):
+                pause_duration = 700 
+            
+            if last_role and current_role != last_role:
+                pause_duration += 150 
+            
+            if len(text_content) <= 2:
+                pause_duration = 150 
+
+            final_segments.append(mixed_seg)
+            final_segments.append(AudioSegment.silent(duration=pause_duration))
+            
+            last_role = current_role
             TASKS[task_id]["progress"] = int((res["index"] / len(dialogues)) * 100)
             
         except Exception as e:
